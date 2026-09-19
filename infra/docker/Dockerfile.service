@@ -1,0 +1,125 @@
+# syntax=docker/dockerfile:1.7
+# One image per NestJS service, built from the repository root:
+#   docker build -f infra/docker/Dockerfile.service --build-arg SERVICE=identity-service --build-arg PORT=3001 \
+#     -t meridian/identity-service:local .
+# Target `migrate` builds meridian/migrate:local, the one-shot `prisma db push` job for all eight schemas.
+#
+# Stages: base -> deps (all service workspaces, shared by every service build) -> packages (contracts,
+# kernel, nest-kit) -> build (prisma generate + tsc for SERVICE) ; prod-deps (production deps for SERVICE
+# only) -> runtime. deps and packages do not depend on SERVICE, so a parallel `docker compose build`
+# computes them once for all services.
+
+ARG NODE_IMAGE=node:24.15.0-bookworm-slim
+
+# ---- base: Debian slim (glibc, so Prisma and argon2 use their prebuilt binaries) + OpenSSL for Prisma ----
+FROM ${NODE_IMAGE} AS base
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false NPM_CONFIG_FUND=false NPM_CONFIG_AUDIT=false NEXT_TELEMETRY_DISABLED=1
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends openssl ca-certificates
+WORKDIR /app
+
+# ---- manifests: lockfile + every workspace manifest (npm ci validates the whole workspace tree) ----
+FROM base AS manifests
+COPY package.json package-lock.json ./
+COPY packages/contracts/package.json packages/contracts/
+COPY packages/kernel/package.json packages/kernel/
+COPY packages/nest-kit/package.json packages/nest-kit/
+COPY apps/identity-service/package.json apps/identity-service/
+COPY apps/catalog-service/package.json apps/catalog-service/
+COPY apps/inventory-service/package.json apps/inventory-service/
+COPY apps/checkout-service/package.json apps/checkout-service/
+COPY apps/payment-service/package.json apps/payment-service/
+COPY apps/notification-service/package.json apps/notification-service/
+COPY apps/search-worker/package.json apps/search-worker/
+COPY apps/analytics-service/package.json apps/analytics-service/
+COPY apps/storefront/package.json apps/storefront/
+
+# ---- deps: dev + prod dependencies of the shared packages and the eight services (not the storefront) ----
+FROM manifests AS deps
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci \
+      -w @meridian/contracts -w @meridian/kernel -w @meridian/nest-kit \
+      -w identity-service -w catalog-service -w inventory-service -w checkout-service \
+      -w payment-service -w notification-service -w search-worker -w analytics-service
+
+# ---- packages: build contracts -> kernel -> nest-kit once ----
+FROM deps AS packages
+COPY packages/contracts packages/contracts
+COPY packages/kernel packages/kernel
+COPY packages/nest-kit packages/nest-kit
+RUN npm run build:packages
+
+# ---- build: prisma generate + compile one service ----
+FROM packages AS build
+ARG SERVICE
+RUN test -n "${SERVICE}" || (echo "build-arg SERVICE is required" >&2; exit 1)
+COPY apps/${SERVICE} apps/${SERVICE}
+WORKDIR /app/apps/${SERVICE}
+ARG BUILD_NODE_OPTIONS=--max-old-space-size=1024
+RUN npx --no-install prisma generate \
+ && NODE_OPTIONS="${BUILD_NODE_OPTIONS}" npm run build \
+ && test -f dist/main.js \
+ && if [ ! -d dist/generated/prisma ]; then mkdir -p dist/generated && cp -a src/generated/prisma dist/generated/prisma; fi
+
+# ---- prod-deps: production dependencies of the shared packages and this service only ----
+FROM manifests AS prod-deps
+ARG SERVICE
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev \
+      -w @meridian/contracts -w @meridian/kernel -w @meridian/nest-kit -w ${SERVICE} \
+ && rm -rf apps/storefront \
+ # npm keeps optional peers of @prisma/client (the prisma CLI, typescript) as "devOptional"; the runtime
+ # only needs @prisma/client/runtime plus the engine copied into dist/generated/prisma.
+ && rm -rf node_modules/prisma node_modules/@prisma/engines node_modules/@prisma/fetch-engine \
+      node_modules/@prisma/get-platform node_modules/@prisma/config node_modules/effect node_modules/fast-check \
+      node_modules/typescript node_modules/.bin/prisma node_modules/.bin/tsc node_modules/.bin/tsserver
+
+# ---- migrate: Prisma CLI + every service schema; runs `prisma db push` (never --force-reset/--accept-data-loss) ----
+FROM base AS migrate
+COPY package-lock.json /tmp/package-lock.json
+RUN --mount=type=cache,target=/root/.npm \
+    version="$(node -p "require('/tmp/package-lock.json').packages['node_modules/prisma'].version")" \
+ && mkdir -p /opt/prisma && cd /opt/prisma && npm init -y >/dev/null \
+ && npm install "prisma@${version}" \
+ && rm /tmp/package-lock.json
+ENV PATH=/opt/prisma/node_modules/.bin:$PATH CHECKPOINT_DISABLE=1 PRISMA_HIDE_UPDATE_MESSAGE=1
+COPY apps/identity-service/prisma apps/identity-service/prisma
+COPY apps/catalog-service/prisma apps/catalog-service/prisma
+COPY apps/inventory-service/prisma apps/inventory-service/prisma
+COPY apps/checkout-service/prisma apps/checkout-service/prisma
+COPY apps/payment-service/prisma apps/payment-service/prisma
+COPY apps/notification-service/prisma apps/notification-service/prisma
+COPY apps/search-worker/prisma apps/search-worker/prisma
+COPY apps/analytics-service/prisma apps/analytics-service/prisma
+COPY infra/docker/init-schemas.sql /app/init-schemas.sql
+COPY infra/docker/migrate.sh /app/migrate.sh
+USER node
+ENTRYPOINT ["sh", "/app/migrate.sh"]
+
+# ---- runtime ----
+FROM base AS runtime
+ARG SERVICE
+ARG PORT=3000
+ENV NODE_ENV=production SERVICE_NAME=${SERVICE} PORT=${PORT}
+# Production node_modules (root-owned, read-only for the app user) and compiled output only.
+COPY --from=prod-deps /app/package.json /app/package-lock.json /app/
+COPY --from=prod-deps /app/node_modules /app/node_modules
+COPY --from=prod-deps /app/packages /app/packages
+COPY --from=packages /app/packages/contracts/dist /app/packages/contracts/dist
+COPY --from=packages /app/packages/kernel/dist /app/packages/kernel/dist
+COPY --from=packages /app/packages/nest-kit/dist /app/packages/nest-kit/dist
+COPY --from=prod-deps /app/apps/${SERVICE} /app/apps/${SERVICE}
+COPY --from=build /app/apps/${SERVICE}/dist /app/apps/${SERVICE}/dist
+WORKDIR /app/apps/${SERVICE}
+# uid/gid 1000, matching the Helm chart's podSecurityContext.
+USER node
+EXPOSE ${PORT}
+STOPSIGNAL SIGTERM
+HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/health/live').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+# Exec form: node receives SIGTERM directly and runs the kit's ordered graceful shutdown.
+# Compose adds `init: true` so a tiny init reaps zombies and forwards signals.
+CMD ["node", "dist/main.js"]

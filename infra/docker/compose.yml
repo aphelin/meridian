@@ -1,0 +1,391 @@
+# Meridian local infrastructure.
+#   core  : backing services + one-shot init jobs (topics, buckets, schemas)
+#   tools : optional UIs (Kafka UI on http://localhost:8080)
+#   apps  : the eight services + storefront as containers (images meridian/<service>:local) and the
+#           one-shot `migrate` job. Needs core: npm run docker:build && npm run docker:up
+#           Storefront http://localhost:3200, services on 127.0.0.1:13001-13012 (see below).
+# Usage: docker compose -f infra/docker/compose.yml --profile core up -d
+# Init jobs depend on `service_started` and retry internally, so they work against containers
+# created before healthchecks existed; `docker compose wait <job>` returns the job's exit code.
+
+x-init-job: &init-job
+  restart: "no"
+  profiles:
+    - core
+  environment: &init-env
+    INIT_ATTEMPTS: "90"
+
+x-app-databases: &app-databases
+  IDENTITY_DATABASE_URL: postgresql://meridian:meridian@postgres:5432/${MERIDIAN_APPS_DB:-meridian_docker}?schema=identity
+  CATALOG_DATABASE_URL: postgresql://meridian:meridian@postgres:5432/${MERIDIAN_APPS_DB:-meridian_docker}?schema=catalog
+  INVENTORY_DATABASE_URL: postgresql://meridian:meridian@postgres:5432/${MERIDIAN_APPS_DB:-meridian_docker}?schema=inventory
+  CHECKOUT_DATABASE_URL: postgresql://meridian:meridian@postgres:5432/${MERIDIAN_APPS_DB:-meridian_docker}?schema=checkout
+  PAYMENT_DATABASE_URL: postgresql://meridian:meridian@postgres:5432/${MERIDIAN_APPS_DB:-meridian_docker}?schema=payment
+  NOTIFICATION_DATABASE_URL: postgresql://meridian:meridian@postgres:5432/${MERIDIAN_APPS_DB:-meridian_docker}?schema=notification
+  SEARCH_DATABASE_URL: postgresql://meridian:meridian@postgres:5432/${MERIDIAN_APPS_DB:-meridian_docker}?schema=search
+  ANALYTICS_DATABASE_URL: postgresql://meridian:meridian@postgres:5432/${MERIDIAN_APPS_DB:-meridian_docker}?schema=analytics
+
+x-service-build: &service-build
+  context: ../..
+  dockerfile: infra/docker/Dockerfile.service
+
+x-app: &app
+  init: true
+  restart: unless-stopped
+  # Covers SHUTDOWN_TIMEOUT_MS (25s) in apps.env before Docker sends SIGKILL.
+  stop_grace_period: 40s
+  env_file:
+    - path: ./apps.env
+    - path: ./apps.env.local
+      required: false
+  environment:
+    <<: *app-databases
+    NODE_ENV: ${MERIDIAN_APPS_NODE_ENV:-production}
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+    kafka:
+      condition: service_healthy
+    minio-init:
+      condition: service_completed_successfully
+  healthcheck:
+    test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+    interval: 10s
+    timeout: 5s
+    retries: 6
+    start_period: 60s
+  profiles:
+    - apps
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: meridian
+      POSTGRES_PASSWORD: meridian
+      POSTGRES_DB: meridian
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-schemas.sql:/docker-entrypoint-initdb.d/init-schemas.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meridian -d meridian -q"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    profiles:
+      - core
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    profiles:
+      - core
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    # Test runs leave thousands of namespaced queues behind; recovering them after an unclean stop needs a file handle
+    # per queue, and the container default (~1k) makes the broker hang in recovery.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 15s
+      timeout: 15s
+      retries: 10
+      start_period: 30s
+    profiles:
+      - core
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: meridian
+      MINIO_ROOT_PASSWORD: meridianminio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    profiles:
+      - core
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null 'http://127.0.0.1:8025/api/v2/messages?limit=1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    profiles:
+      - core
+
+  kafka:
+    image: apache/kafka:3.9.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: INTERNAL://:29092,EXTERNAL://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      # The CLI is a JVM: keep its heap small and the interval relaxed so the probe stays cheap.
+      test: ["CMD-SHELL", "KAFKA_HEAP_OPTS='-Xmx96m -Xms32m' /opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 6
+      start_period: 45s
+    profiles:
+      - core
+
+  jaeger:
+    image: jaegertracing/jaeger:2.10.0
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:16686/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    profiles:
+      - core
+
+  # ---- one-shot init jobs (exit 0, safe to re-run) ----
+
+  kafka-init:
+    <<: *init-job
+    image: apache/kafka:3.9.1
+    depends_on:
+      kafka:
+        condition: service_started
+    entrypoint: ["bash", "/init/kafka-topics.sh"]
+    command: []
+    environment:
+      <<: *init-env
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_TOPIC_PARTITIONS: "3"
+      KAFKA_HEAP_OPTS: "-Xmx128m -Xms32m"
+    volumes:
+      - ./init/kafka-topics.sh:/init/kafka-topics.sh:ro
+
+  minio-init:
+    <<: *init-job
+    image: quay.io/minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: ["sh", "/init/minio-buckets.sh"]
+    environment:
+      <<: *init-env
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: meridian
+      MINIO_ROOT_PASSWORD: meridianminio
+      S3_BUCKET_MEDIA: meridian-media
+      S3_BUCKET_INVOICES: meridian-invoices
+    volumes:
+      - ./init/minio-buckets.sh:/init/minio-buckets.sh:ro
+
+  postgres-init:
+    <<: *init-job
+    image: postgres:16-alpine
+    depends_on:
+      postgres:
+        condition: service_started
+    entrypoint: ["sh", "/init/postgres-schemas.sh"]
+    command: []
+    environment:
+      <<: *init-env
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: meridian
+      PGPASSWORD: meridian
+      PGDATABASE: meridian
+    volumes:
+      - ./init/postgres-schemas.sh:/init/postgres-schemas.sh:ro
+      - ./init-schemas.sql:/init/init-schemas.sql:ro
+
+  # ---- apps profile: containerised services (infra/docker/Dockerfile.service, Dockerfile.storefront) ----
+  # Isolated from a host dev stack on the same infra: own database (MERIDIAN_APPS_DB, default
+  # meridian_docker), messaging namespace `docker` and Redis prefix `docker:` (infra/docker/apps.env).
+  # NODE_ENV defaults to production (dev-only /seed endpoints return 404); set MERIDIAN_APPS_NODE_ENV=development
+  # to seed with scripts/seed.sh against the published ports.
+
+  migrate:
+    image: meridian/migrate:local
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.service
+      target: migrate
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *app-databases
+    profiles:
+      - apps
+
+  identity-service:
+    <<: *app
+    image: meridian/identity-service:local
+    build:
+      <<: *service-build
+      args: { SERVICE: identity-service, PORT: "3001" }
+    ports: ["127.0.0.1:13001:3001"]
+
+  catalog-service:
+    <<: *app
+    image: meridian/catalog-service:local
+    build:
+      <<: *service-build
+      args: { SERVICE: catalog-service, PORT: "3012" }
+    ports: ["127.0.0.1:13012:3012"]
+
+  inventory-service:
+    <<: *app
+    image: meridian/inventory-service:local
+    build:
+      <<: *service-build
+      args: { SERVICE: inventory-service, PORT: "3003" }
+    ports: ["127.0.0.1:13003:3003"]
+
+  checkout-service:
+    <<: *app
+    image: meridian/checkout-service:local
+    build:
+      <<: *service-build
+      args: { SERVICE: checkout-service, PORT: "3004" }
+    ports: ["127.0.0.1:13004:3004"]
+
+  payment-service:
+    <<: *app
+    image: meridian/payment-service:local
+    build:
+      <<: *service-build
+      args: { SERVICE: payment-service, PORT: "3005" }
+    ports: ["127.0.0.1:13005:3005"]
+
+  notification-service:
+    <<: *app
+    image: meridian/notification-service:local
+    build:
+      <<: *service-build
+      args: { SERVICE: notification-service, PORT: "3006" }
+    ports: ["127.0.0.1:13006:3006"]
+
+  search-worker:
+    <<: *app
+    image: meridian/search-worker:local
+    build:
+      <<: *service-build
+      args: { SERVICE: search-worker, PORT: "3007" }
+    ports: ["127.0.0.1:13007:3007"]
+
+  analytics-service:
+    <<: *app
+    image: meridian/analytics-service:local
+    build:
+      <<: *service-build
+      args: { SERVICE: analytics-service, PORT: "3008" }
+    ports: ["127.0.0.1:13008:3008"]
+
+  storefront:
+    image: meridian/storefront:local
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.storefront
+      args:
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-1x00000000000000000000AA}
+        NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: ${NEXT_PUBLIC_PADDLE_CLIENT_TOKEN:-}
+        S3_PUBLIC_URL: ${MERIDIAN_APPS_S3_PUBLIC_URL:-http://localhost:9000/meridian-media}
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 20s
+    env_file:
+      - path: ./apps.env
+      - path: ./apps.env.local
+        required: false
+    environment:
+      NODE_ENV: production
+      PORT: "3100"
+      HOSTNAME: 0.0.0.0
+    ports: ["${MERIDIAN_STOREFRONT_PORT:-3200}:3100"]
+    depends_on:
+      identity-service:
+        condition: service_healthy
+      catalog-service:
+        condition: service_healthy
+      checkout-service:
+        condition: service_healthy
+    profiles:
+      - apps
+
+  # ---- optional tools ----
+
+  kafka-ui:
+    image: kafbat/kafka-ui:v1.3.0
+    depends_on:
+      kafka:
+        condition: service_started
+    environment:
+      KAFKA_CLUSTERS_0_NAME: meridian
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      DYNAMIC_CONFIG_ENABLED: "false"
+      JAVA_OPTS: "-Xmx256m -Xms64m"
+    ports:
+      - "${KAFKA_UI_PORT:-8080}:8080"
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+  minio_data:
+  kafka_data:

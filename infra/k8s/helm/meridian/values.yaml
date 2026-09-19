@@ -1,0 +1,207 @@
+# Meridian umbrella chart. Backing services (Postgres, Redis, RabbitMQ, Kafka, MinIO, SMTP sandbox,
+# OTLP collector) are external to this chart; point `config` and `database` at them.
+
+image:
+  # Final image: <registry>/<repository>/<service>:<tag> (registry optional)
+  registry: ""
+  repository: meridian
+  tag: local
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Shared, non-sensitive environment (ConfigMap, mounted with envFrom on every container).
+# Service URLs (IDENTITY_URL ... ANALYTICS_URL, SEARCH_URL) are generated from `services`.
+config:
+  NODE_ENV: production
+  LOG_LEVEL: info
+  PUBLIC_SITE_URL: http://meridian.localtest.me
+  SUPPORT_EMAIL: support@meridian.local
+  CORS_ORIGINS: ""
+  KAFKA_BROKERS: kafka:9092
+  KAFKA_RETRY_DELAYS_MS: "500,2000,5000"
+  RABBIT_URL: amqp://rabbitmq:5672
+  RABBIT_RETRY_DELAYS_MS: "5000,30000,120000"
+  REDIS_URL: redis://redis:6379
+  REDIS_KEY_PREFIX: ""
+  MESSAGING_NAMESPACE: ""
+  OUTBOX_POLL_MS: "500"
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger-collector:4318
+  # Graceful shutdown: readiness flips to 503, the pod drains, hooks run, the process exits.
+  # preStop sleeps ceil(SHUTDOWN_DRAIN_MS/1000)+1 seconds; the chart fails to render when
+  # preStop + SHUTDOWN_TIMEOUT_MS does not fit in terminationGracePeriodSeconds.
+  SHUTDOWN_DRAIN_MS: "5000"
+  SHUTDOWN_HOOK_TIMEOUT_MS: "8000"
+  SHUTDOWN_TIMEOUT_MS: "25000"
+  BREAKER_RESET_MS: "10000"
+  CAPTCHA_TIMEOUT_MS: "3000"
+  TURNSTILE_VERIFY_URL: https://challenges.cloudflare.com/turnstile/v0/siteverify
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
+  NEXT_PUBLIC_PADDLE_CLIENT_TOKEN: ""
+  # Payments: Stripe test mode (payment-service refuses live keys). stripe | paddle | local; empty = stripe when
+  # STRIPE_SECRET_KEY is set, else paddle, else the local sandbox.
+  PAYMENT_PROVIDER: ""
+  # pk_test_... (sent to the Payment Element with each intent)
+  STRIPE_PUBLISHABLE_KEY: ""
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ""
+  PADDLE_ENV: sandbox
+  SMTP_HOST: mailhog
+  SMTP_PORT: "1025"
+  SMTP_SANDBOX_HOSTS: ""
+  S3_ENDPOINT: http://minio:9000
+  # Presigned links are opened by browsers: sign them for the public MinIO host (ingress), not the in-cluster name.
+  S3_PRESIGN_ENDPOINT: http://minio.localtest.me
+  S3_REGION: us-east-1
+  S3_BUCKET_MEDIA: meridian-media
+  S3_BUCKET_INVOICES: meridian-invoices
+  S3_PUBLIC_URL: http://minio.localtest.me/meridian-media
+  CHAOS_ENABLED: "false"
+  ORDER_HOLD_MINUTES: "15"
+  DEFAULT_STOCK_ON_HAND: "8"
+
+# Postgres used to build <SVC>_DATABASE_URL secrets (one schema per service).
+database:
+  host: postgres
+  port: 5432
+  name: meridian
+  user: meridian
+  password: meridian
+
+# Sensitive values (Secret). JWT_SECRET and ORDER_LINK_SECRET are generated when empty and kept
+# across upgrades. Set `existingSecret` to manage the Secret yourself (same keys, including the
+# <SVC>_DATABASE_URL keys).
+existingSecret: ""
+secrets:
+  JWT_SECRET: ""
+  ORDER_LINK_SECRET: ""
+  TURNSTILE_SECRET_KEY: 1x0000000000000000000000000000000AA
+  # Stripe test mode: sk_test_/rk_test_ key and the webhook endpoint's whsec_ signing secret.
+  STRIPE_SECRET_KEY: ""
+  STRIPE_WEBHOOK_SECRET: ""
+  PADDLE_API_KEY: ""
+  PADDLE_CLIENT_TOKEN: ""
+  PADDLE_WEBHOOK_SECRET: ""
+  S3_ACCESS_KEY: meridian
+  S3_SECRET_KEY: meridianminio
+
+# Applied to every workload unless the service entry overrides the key.
+defaults:
+  replicas: 1
+  terminationGracePeriodSeconds: 45
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  probes:
+    startup:
+      periodSeconds: 2
+      failureThreshold: 60
+      timeoutSeconds: 2
+    liveness:
+      periodSeconds: 10
+      failureThreshold: 3
+      timeoutSeconds: 3
+    readiness:
+      periodSeconds: 5
+      failureThreshold: 2
+      timeoutSeconds: 3
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 75
+
+# One Deployment + Service per entry.
+#   health: http (GET /health/live, /health/ready) or tcp (socket probes, for the storefront)
+#   urlEnv: ConfigMap key that receives http://<name>:<port>
+#   database: Secret key <env> = postgresql://.../<name>?schema=<schema>
+#   secretEnv: Secret keys exposed to this container only (least privilege)
+#   metrics: add Prometheus scrape annotations for GET /metrics
+services:
+  - name: identity-service
+    port: 3001
+    health: http
+    metrics: true
+    urlEnv: IDENTITY_URL
+    database: { env: IDENTITY_DATABASE_URL, schema: identity }
+    secretEnv: [JWT_SECRET, ORDER_LINK_SECRET, TURNSTILE_SECRET_KEY]
+  - name: catalog-service
+    port: 3012
+    health: http
+    metrics: true
+    urlEnv: CATALOG_URL
+    database: { env: CATALOG_DATABASE_URL, schema: catalog }
+    secretEnv: [JWT_SECRET, S3_ACCESS_KEY, S3_SECRET_KEY]
+  - name: inventory-service
+    port: 3003
+    health: http
+    metrics: true
+    urlEnv: INVENTORY_URL
+    database: { env: INVENTORY_DATABASE_URL, schema: inventory }
+    secretEnv: [JWT_SECRET]
+  - name: checkout-service
+    port: 3004
+    health: http
+    metrics: true
+    urlEnv: CHECKOUT_URL
+    database: { env: CHECKOUT_DATABASE_URL, schema: checkout }
+    secretEnv: [JWT_SECRET, ORDER_LINK_SECRET, TURNSTILE_SECRET_KEY, S3_ACCESS_KEY, S3_SECRET_KEY]
+  - name: payment-service
+    port: 3005
+    health: http
+    metrics: true
+    urlEnv: PAYMENT_URL
+    database: { env: PAYMENT_DATABASE_URL, schema: payment }
+    secretEnv: [JWT_SECRET, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, PADDLE_API_KEY, PADDLE_CLIENT_TOKEN, PADDLE_WEBHOOK_SECRET]
+  - name: notification-service
+    port: 3006
+    health: http
+    metrics: true
+    urlEnv: NOTIFICATION_URL
+    database: { env: NOTIFICATION_DATABASE_URL, schema: notification }
+    secretEnv: [JWT_SECRET, ORDER_LINK_SECRET, TURNSTILE_SECRET_KEY]
+  - name: search-worker
+    port: 3007
+    health: http
+    metrics: true
+    urlEnv: SEARCH_URL
+    database: { env: SEARCH_DATABASE_URL, schema: search }
+    secretEnv: [JWT_SECRET]
+  - name: analytics-service
+    port: 3008
+    health: http
+    metrics: true
+    urlEnv: ANALYTICS_URL
+    database: { env: ANALYTICS_DATABASE_URL, schema: analytics }
+    secretEnv: [JWT_SECRET]
+  - name: storefront
+    port: 3100
+    health: tcp
+    metrics: false
+    secretEnv: [JWT_SECRET]
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 768Mi
+
+ingress:
+  enabled: true
+  className: ""
+  host: meridian.localtest.me
+  annotations: {}

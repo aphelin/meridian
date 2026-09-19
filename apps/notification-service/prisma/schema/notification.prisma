@@ -1,0 +1,98 @@
+/// One row per logical email (dedupeKey). Every send attempt is recorded on it; bodies are never stored because
+/// they carry one-time tokens.
+model EmailDelivery {
+  id             String    @id
+  dedupeKey      String    @unique
+  template       String
+  toEmail        String
+  toName         String?
+  subject        String
+  /// queued | sent | failed | dead-lettered | suppressed
+  status         String
+  attempts       Int       @default(0)
+  lastError      String?
+  correlationId  String
+  /// An attempt holds the lease while it talks to SMTP, so a duplicate message cannot send in parallel.
+  leaseUntil     DateTime?
+  smtpMessageId  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  sentAt         DateTime?
+
+  @@index([createdAt, id])
+  @@index([status, createdAt])
+  @@index([template, createdAt])
+  @@index([toEmail])
+}
+
+model NewsletterSubscription {
+  id                    String    @id
+  email                 String    @unique
+  /// pending | confirmed | unsubscribed
+  status                String
+  confirmTokenHash      String?   @unique
+  confirmTokenExpiresAt DateTime?
+  unsubscribeTokenHash  String?   @unique
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  confirmedAt           DateTime?
+  unsubscribedAt        DateTime?
+}
+
+model ContactMessage {
+  id            String   @id
+  name          String
+  email         String
+  topic         String
+  orderNumber   String?
+  message       String
+  correlationId String
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt, id])
+  @@index([email])
+}
+
+model StockAlert {
+  id         String    @id
+  email      String
+  sku        String
+  slug       String
+  /// pending | notified
+  status     String
+  /// "<email>|<sku>" while pending, null afterwards: at most one pending alert per email and SKU.
+  pendingKey String?   @unique
+  createdAt  DateTime  @default(now())
+  notifiedAt DateTime?
+
+  @@index([sku, status])
+  @@index([email])
+}
+
+/// Order details the dispatcher needs later but that later events do not carry (from OrderPlaced).
+model OrderRecipient {
+  orderId         String   @id
+  number          String
+  userId          String?
+  email           String
+  name            String
+  shippingAddress Json
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// Catalog product directory (amendment 1o) from ProductPublished/ProductUpdated/ProductArchived, so emails can use the
+/// product name. `versionAt` (snapshot updatedAt or archive time) guards ordering: older changes never overwrite newer.
+model ProductDirectoryEntry {
+  productId    String   @id
+  slug         String
+  /// Null only while the product has been seen archived but never published.
+  name         String?
+  heroImageUrl String?
+  archived     Boolean  @default(false)
+  versionAt    DateTime
+  updatedAt    DateTime @updatedAt
+
+  @@index([slug])
+}

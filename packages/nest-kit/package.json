@@ -1,0 +1,57 @@
+{
+  "name": "@meridian/nest-kit",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tracing": {
+      "types": "./dist/tracing/register.d.ts",
+      "default": "./dist/tracing/register.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "default": "./dist/testing/index.js"
+    }
+  },
+  "scripts": {
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@meridian/contracts": "*",
+    "@meridian/kernel": "*",
+    "@nestjs/common": "^11.1.28",
+    "@nestjs/core": "^11.1.28",
+    "@nestjs/jwt": "^11.0.0",
+    "@nestjs/platform-express": "^11.1.28",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/auto-instrumentations-node": "^0.80.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.0.0",
+    "@opentelemetry/sdk-node": "^0.222.0",
+    "@opentelemetry/semantic-conventions": "^1.37.0",
+    "@prometheus-io/client": "^0.16.1",
+    "amqplib": "^0.10.8",
+    "helmet": "^8.3.0",
+    "ioredis": "^5.11.1",
+    "kafkajs": "^2.2.4",
+    "opossum": "^8.4.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.7",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.5.2",
+    "@types/opossum": "^8.1.9",
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.11"
+  }
+}

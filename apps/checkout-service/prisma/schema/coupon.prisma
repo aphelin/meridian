@@ -1,0 +1,32 @@
+model Coupon {
+  code            String             @id
+  type            String
+  /// Percent (1-100) or cents, depending on type.
+  value           Int
+  minBasketCents  Int                @default(0)
+  maxRedemptions  Int?
+  /// Maintained atomically with CouponRedemption rows; the conditional increment is the global-limit guard.
+  redemptions     Int                @default(0)
+  oncePerCustomer Boolean            @default(false)
+  active          Boolean            @default(true)
+  startsAt        DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  redemptionRows  CouponRedemption[]
+}
+
+model CouponRedemption {
+  id            String   @id
+  couponCode    String
+  orderId       String   @unique
+  customerKey   String
+  /// customerKey for once-per-customer coupons, null otherwise: the unique index enforces "once" under concurrency.
+  onceKey       String?
+  discountCents Int
+  createdAt     DateTime @default(now())
+  coupon        Coupon   @relation(fields: [couponCode], references: [code], onDelete: Cascade)
+
+  @@unique([couponCode, onceKey])
+  @@index([couponCode, customerKey])
+}

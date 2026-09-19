@@ -1,0 +1,44 @@
+/// One sellable SKU. available = onHand - reserved; the StockItem aggregate keeps 0 <= reserved <= onHand.
+model StockItem {
+  sku       String   @id
+  onHand    Int
+  reserved  Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// All-or-nothing hold for one order (the Reservation aggregate). orderId is the idempotency key.
+model Reservation {
+  orderId       String            @id
+  status        String
+  expiresAt     DateTime
+  releaseReason String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  lines         ReservationLine[]
+
+  @@index([status, expiresAt])
+}
+
+model ReservationLine {
+  orderId     String
+  sku         String
+  qty         Int
+  reservation Reservation @relation(fields: [orderId], references: [orderId], onDelete: Cascade)
+
+  @@id([orderId, sku])
+}
+
+/// Append-only audit of every onHand change.
+model StockMovement {
+  id          String   @id
+  sku         String
+  delta       Int
+  onHandAfter Int
+  reason      String
+  actorId     String?
+  orderId     String?
+  createdAt   DateTime @default(now())
+
+  @@index([sku, createdAt])
+}

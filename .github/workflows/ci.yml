@@ -1,0 +1,116 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+  FORCE_COLOR: "1"
+
+jobs:
+  infra:
+    name: infra (compose, helm, scripts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Script syntax
+        run: |
+          for f in scripts/*.sh infra/docker/init/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: Compose config
+        run: docker compose -f infra/docker/compose.yml --profile core --profile tools --profile apps config --quiet
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+
+      - name: Helm lint and render
+        run: |
+          helm lint infra/k8s/helm/meridian
+          helm template meridian infra/k8s/helm/meridian > /dev/null
+
+  images:
+    name: docker images (build only, no push)
+    runs-on: ubuntu-latest
+    needs: infra
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same command as `npm run docker:build`: every service, the storefront and the migrate job,
+      # built in parallel from infra/docker/Dockerfile.service and Dockerfile.storefront.
+      - name: Build images
+        run: docker compose -f infra/docker/compose.yml --profile core --profile apps build
+
+      - name: List images
+        run: docker images 'meridian/*'
+
+  pipeline:
+    name: typecheck, unit, integration, e2e
+    runs-on: ubuntu-latest
+    needs: infra
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Cache Next.js build
+        uses: actions/cache@v4
+        with:
+          path: apps/storefront/.next/cache
+          key: next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-${{ github.sha }}
+          restore-keys: |
+            next-${{ runner.os }}-${{ hashFiles('package-lock.json') }}-
+
+      # Same pipeline as `npm run ci:local`: typecheck -> test:unit -> compose core + init jobs
+      # -> prisma db push -> build -> start services -> seed -> test:int -> storefront -> test:e2e
+      # -> graceful stop.
+      - name: Pipeline (scripts/ci-local.sh)
+        run: bash scripts/ci-local.sh --playwright-install
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/storefront/playwright-report
+            apps/storefront/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload service logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: service-logs
+          path: /tmp/meridian-logs
+          if-no-files-found: ignore
+          retention-days: 7

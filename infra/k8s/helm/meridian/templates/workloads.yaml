@@ -1,0 +1,182 @@
+{{- $root := . }}
+{{- $defaults := .Values.defaults }}
+{{- $preStop := include "meridian.preStopSeconds" . | atoi }}
+{{- $timeoutMs := atoi (toString (default "25000" .Values.config.SHUTDOWN_TIMEOUT_MS)) }}
+{{- range $svc := .Values.services }}
+{{- $grace := int (default $defaults.terminationGracePeriodSeconds $svc.terminationGracePeriodSeconds) }}
+{{- if lt (mul $grace 1000) (add (mul $preStop 1000) $timeoutMs) }}
+{{- fail (printf "%s: terminationGracePeriodSeconds %d is shorter than preStop %ds + SHUTDOWN_TIMEOUT_MS %dms" $svc.name $grace $preStop $timeoutMs) }}
+{{- end }}
+{{- $probes := merge (default dict $svc.probes) $defaults.probes }}
+{{- $autoscaling := merge (default dict $svc.autoscaling) $defaults.autoscaling }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $svc.name }}
+  labels:
+    {{- include "meridian.labels" (dict "root" $root "name" $svc.name) | nindent 4 }}
+    app.kubernetes.io/component: {{ ternary "frontend" "backend" (eq $svc.health "tcp") }}
+spec:
+  {{- if not $autoscaling.enabled }}
+  replicas: {{ default $defaults.replicas $svc.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "meridian.selectorLabels" (dict "root" $root "name" $svc.name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "meridian.labels" (dict "root" $root "name" $svc.name) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $root.Template.BasePath "/configmap.yaml") $root | sha256sum }}
+        {{- if $svc.metrics }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ $svc.port | quote }}
+        prometheus.io/path: /metrics
+        {{- end }}
+    spec:
+      terminationGracePeriodSeconds: {{ $grace }}
+      {{- with $root.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml (default $defaults.podSecurityContext $svc.podSecurityContext) | nindent 8 }}
+      containers:
+        - name: {{ $svc.name }}
+          image: {{ include "meridian.image" (dict "root" $root "svc" $svc) | quote }}
+          imagePullPolicy: {{ $root.Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "meridian.configName" $root }}
+          env:
+            - name: SERVICE_NAME
+              value: {{ $svc.name | quote }}
+            - name: PORT
+              value: {{ $svc.port | quote }}
+            {{- if eq $svc.health "tcp" }}
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            {{- end }}
+            {{- if $svc.database }}
+            - name: {{ $svc.database.env }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "meridian.secretName" $root }}
+                  key: {{ $svc.database.env }}
+            {{- end }}
+            {{- range $key := $svc.secretEnv }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "meridian.secretName" $root }}
+                  key: {{ $key }}
+                  optional: {{ has $key (list "STRIPE_SECRET_KEY" "STRIPE_WEBHOOK_SECRET" "PADDLE_API_KEY" "PADDLE_CLIENT_TOKEN" "PADDLE_WEBHOOK_SECRET") }}
+            {{- end }}
+            {{- range $key, $value := $svc.env }}
+            - name: {{ $key }}
+              value: {{ toString $value | quote }}
+            {{- end }}
+          {{- if eq $svc.health "tcp" }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: {{ $probes.startup.periodSeconds }}
+            failureThreshold: {{ $probes.startup.failureThreshold }}
+            timeoutSeconds: {{ $probes.startup.timeoutSeconds }}
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: {{ $probes.liveness.periodSeconds }}
+            failureThreshold: {{ $probes.liveness.failureThreshold }}
+            timeoutSeconds: {{ $probes.liveness.timeoutSeconds }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: {{ $probes.readiness.periodSeconds }}
+            failureThreshold: {{ $probes.readiness.failureThreshold }}
+            timeoutSeconds: {{ $probes.readiness.timeoutSeconds }}
+          {{- else }}
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: {{ $probes.startup.periodSeconds }}
+            failureThreshold: {{ $probes.startup.failureThreshold }}
+            timeoutSeconds: {{ $probes.startup.timeoutSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: {{ $probes.liveness.periodSeconds }}
+            failureThreshold: {{ $probes.liveness.failureThreshold }}
+            timeoutSeconds: {{ $probes.liveness.timeoutSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: {{ $probes.readiness.periodSeconds }}
+            failureThreshold: {{ $probes.readiness.failureThreshold }}
+            timeoutSeconds: {{ $probes.readiness.timeoutSeconds }}
+          {{- end }}
+          lifecycle:
+            preStop:
+              exec:
+                # Keep serving while endpoints and load balancers drop the pod, then SIGTERM
+                # starts the in-process shutdown (readiness 503, drain, hooks, exit).
+                command: ["sleep", "{{ $preStop }}"]
+          resources:
+            {{- toYaml (default $defaults.resources $svc.resources) | nindent 12 }}
+          securityContext:
+            {{- toYaml (default $defaults.securityContext $svc.securityContext) | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $svc.name }}
+  labels:
+    {{- include "meridian.labels" (dict "root" $root "name" $svc.name) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "meridian.selectorLabels" (dict "root" $root "name" $svc.name) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: http
+      protocol: TCP
+{{- if $autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $svc.name }}
+  labels:
+    {{- include "meridian.labels" (dict "root" $root "name" $svc.name) | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $svc.name }}
+  minReplicas: {{ $autoscaling.minReplicas }}
+  maxReplicas: {{ $autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- end }}

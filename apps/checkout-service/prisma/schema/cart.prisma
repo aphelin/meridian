@@ -1,0 +1,24 @@
+/// Shopping cart: one per signed-in user (userId unique) or an anonymous guest cart addressed by x-cart-id.
+model Cart {
+  id        String     @id
+  userId    String?    @unique
+  version   Int        @default(0)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  lines     CartLine[]
+
+  @@index([userId, updatedAt])
+}
+
+model CartLine {
+  cartId         String
+  sku            String
+  variantId      String
+  slug           String
+  qty            Int
+  unitPriceCents Int
+  position       Int
+  cart           Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  @@id([cartId, sku])
+}

@@ -1,0 +1,22 @@
+model Outbox {
+  id            String    @id
+  kind          String
+  name          String
+  aggregateType String?
+  aggregateId   String?
+  payload       Json
+  correlationId String
+  causationId   String?
+  traceparent   String?
+  createdAt     DateTime  @default(now())
+  publishedAt   DateTime?
+  attempts      Int       @default(0)
+  lastError     String?
+  @@index([publishedAt, createdAt])
+}
+model Inbox {
+  messageId   String
+  consumer    String
+  processedAt DateTime @default(now())
+  @@id([messageId, consumer])
+}

@@ -1,0 +1,31 @@
+node_modules
+.next
+.next-*
+test-results*
+playwright-report
+dist
+.turbo
+.env
+.env.local
+*.log
+.impeccable/review
+.impeccable/build
+.impeccable/config.local.json
+infra/docker/apps.env.local
+
+# Personal notes and design-tool state (kept local)
+.impeccable/
+.unlazy/
+PRODUCT.md
+DESIGN.md
+docs/HOW-IT-WORKS.md
+docs/TESTING-GUIDE.md
+docs/DEMO.md
+docs/ASSETS.md
+docs/IMAGE-PROMPTS*.md
+
+# Generated Prisma clients (host-specific engine binaries; regenerated on install)
+apps/*/src/generated
+
+# Scratch scripts
+**/.probe*.mjs

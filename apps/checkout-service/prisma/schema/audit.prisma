@@ -1,0 +1,14 @@
+/// Admin audit trail: who changed what, written in the same transaction as the change.
+model AuditEntry {
+  id          String   @id
+  action      String
+  actorId     String
+  subjectType String
+  subjectId   String
+  orderId     String?
+  at          DateTime
+  meta        Json
+
+  @@index([orderId, at])
+  @@index([subjectType, subjectId, at])
+}

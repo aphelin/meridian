@@ -1,0 +1,10 @@
+apiVersion: v2
+name: meridian
+description: Meridian commerce platform - eight NestJS services and the Next.js storefront
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+keywords:
+  - microservices
+  - nestjs
+  - nextjs

@@ -1,0 +1,47 @@
+{
+  "name": "meridian",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo dev --filter=!storefront",
+    "dev:store": "npm exec -w storefront -- next dev --port 3100",
+    "build": "turbo build",
+    "build:packages": "npm run build -w @meridian/contracts && npm run build -w @meridian/kernel && npm run build -w @meridian/nest-kit",
+    "build:services": "npm run build -w identity-service && npm run build -w catalog-service && npm run build -w inventory-service && npm run build -w checkout-service && npm run build -w payment-service && npm run build -w notification-service && npm run build -w search-worker && npm run build -w analytics-service && bash scripts/copy-prisma.sh",
+    "lint": "turbo lint",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test:unit": "npm run test --workspaces --if-present -- --passWithNoTests",
+    "test:int": "npm run test:int --workspaces --if-present",
+    "test:e2e": "npm run test:e2e -w storefront",
+    "bootstrap": "bash scripts/bootstrap.sh",
+    "sync-env": "node scripts/sync-env.mjs",
+    "infra:up": "docker compose -f infra/docker/compose.yml --profile core up -d",
+    "infra:tools": "docker compose -f infra/docker/compose.yml --profile tools up -d",
+    "docker:build": "docker compose -f infra/docker/compose.yml --profile core --profile apps build",
+    "docker:up": "docker compose -f infra/docker/compose.yml --profile core --profile apps up -d --wait identity-service catalog-service inventory-service checkout-service payment-service notification-service search-worker analytics-service storefront",
+    "docker:down": "docker compose -f infra/docker/compose.yml --profile core --profile apps rm --stop --force migrate identity-service catalog-service inventory-service checkout-service payment-service notification-service search-worker analytics-service storefront",
+    "docker:seed": "IDENTITY_URL=http://localhost:13001 CATALOG_URL=http://localhost:13012 INVENTORY_URL=http://localhost:13003 CHECKOUT_URL=http://localhost:13004 bash scripts/seed.sh",
+    "dev:api": "bash scripts/dev-api.sh",
+    "stop:api": "bash scripts/stop-api.sh",
+    "seed": "bash scripts/seed.sh",
+    "ci:local": "bash scripts/ci-local.sh",
+    "k8s:kind": "bash scripts/kind.sh"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.16.2",
+    "@types/node": "^24.5.2",
+    "js-yaml": "^4.1.0",
+    "tsx": "^4.23.13",
+    "turbo": "^2.5.8",
+    "typescript": "^5.9.2",
+    "unplugin-swc": "^1.6.0",
+    "vitest": "^4.1.11"
+  },
+  "packageManager": "npm@11.12.1",
+  "engines": {
+    "node": ">=24"
+  }
+}

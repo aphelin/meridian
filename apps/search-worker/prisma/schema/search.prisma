@@ -1,0 +1,45 @@
+/// One searchable product, projected from catalog ProductPublished/ProductUpdated/ProductArchived snapshots.
+/// Archived products stay as tombstones (status "archived") so a late or replayed older snapshot cannot resurrect them.
+/// Trigram and full-text GIN indexes are created at startup (pg_trgm lives in schema public; see SearchIndexesInstaller).
+model ProductDocument {
+  productId        String                   @id
+  slug             String                   @unique
+  name             String
+  kind             String
+  story            String
+  categoryId       String
+  categoryLabel    String
+  /// Product materials plus every variant material, deduplicated.
+  materials        String[]
+  /// Distinct variant colour families.
+  colors           String[]
+  skus             String[]
+  variantLabels    String[]
+  priceCents       Int
+  featured         Boolean
+  /// Catalog merchandising stop-sell (amendment 1p): a sold-out product is never in stock, whatever inventory says.
+  soldOut          Boolean                  @default(false)
+  heroImageUrl     String
+  ratingAvg        Float?
+  ratingCount      Int
+  status           String
+  productCreatedAt DateTime                 @db.Timestamptz(3)
+  productUpdatedAt DateTime                 @db.Timestamptz(3)
+  searchVector     Unsupported("tsvector")?
+  lastEventId      String
+  lastEventAt      DateTime                 @db.Timestamptz(3)
+  indexedAt        DateTime                 @default(now()) @db.Timestamptz(3)
+
+  @@index([status, categoryId])
+  @@index([status, priceCents])
+  @@index([status, productCreatedAt])
+}
+
+/// Latest known availability per SKU from inventory events that carry it. A SKU never seen here counts as in stock.
+model SkuAvailability {
+  sku         String   @id
+  available   Boolean
+  lastEventId String
+  lastEventAt DateTime @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+}

@@ -1,0 +1,807 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* The shop is light only. Pinning the dark variant to a class nobody sets keeps shadcn's dark: utilities inert. */
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-paper: #faf7f2;
+  --color-raised: #fffdf9;
+  --color-plaster: #f1eadf;
+  --color-plaster-deep: #e7dfd2;
+  --color-ink: #1b1a17;
+  --color-ink-hover: #34322d;
+  --color-stone: #655f57;
+  --color-walnut: #5b4632;
+  --color-line: #e8e0d4;
+  --color-line-strong: #d6ccbd;
+  --color-cobalt: #2b47b9;
+  --color-cobalt-wash: #eef1fb;
+  --color-moss: #2f6b47;
+  --color-moss-wash: #eaf3ed;
+  --color-amber: #8a5a12;
+  --color-brick: #a3321f;
+  --color-brick-wash: #fbede9;
+
+  --font-sans: var(--font-albert), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-fraunces), ui-serif, Georgia, serif;
+
+  --radius-well: 18px;
+  --radius-card: 14px;
+  --radius-field: 12px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --shadow-drawer: -24px 0 64px -16px rgb(27 26 23 / 0.22);
+  --shadow-pop: 0 18px 40px -18px rgb(27 26 23 / 0.28);
+  --shadow-menu: 0 24px 56px -24px rgb(27 26 23 / 0.32), 0 0 0 1px rgb(27 26 23 / 0.07);
+  --shadow-lift: 0 12px 26px -16px rgb(27 26 23 / 0.5);
+}
+
+/* shadcn's semantic names, pointed at the Meridian palette so generated components start on-brand. */
+@theme inline {
+  --color-background: var(--color-paper);
+  --color-foreground: var(--color-ink);
+  --color-card: var(--color-raised);
+  --color-card-foreground: var(--color-ink);
+  --color-popover: var(--color-raised);
+  --color-popover-foreground: var(--color-ink);
+  --color-primary: var(--color-ink);
+  --color-primary-foreground: var(--color-paper);
+  --color-secondary: var(--color-plaster);
+  --color-secondary-foreground: var(--color-ink);
+  --color-muted: var(--color-plaster);
+  --color-muted-foreground: var(--color-stone);
+  --color-accent: var(--color-plaster);
+  --color-accent-foreground: var(--color-ink);
+  --color-destructive: var(--color-brick);
+  --color-border: var(--color-line);
+  --color-input: var(--color-line-strong);
+  --color-ring: var(--color-cobalt);
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.6;
+    font-feature-settings: "ss01" 0;
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: var(--color-line);
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    line-height: 1.08;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ::selection {
+    background: var(--color-cobalt);
+    color: var(--color-paper);
+  }
+
+  input,
+  textarea,
+  select {
+    caret-color: var(--color-cobalt);
+    font: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-cobalt);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+
+  /* Tailwind v4 resets buttons to the default arrow. Anything you can press shows the hand, anything disabled says so. */
+  button,
+  summary,
+  select,
+  [role="button"],
+  [role="tab"],
+  [role="switch"],
+  [role="radio"],
+  [role="checkbox"],
+  [role="slider"],
+  [role="option"],
+  [role="menuitem"],
+  [role="menuitemradio"],
+  [role="menuitemcheckbox"],
+  label:has(> [role="radio"], > [role="switch"]) {
+    cursor: pointer;
+  }
+
+  :is(button, [role="button"], [role="tab"], [role="switch"], [role="radio"], [role="option"], [role="menuitem"]):is(
+      :disabled,
+      [aria-disabled="true"],
+      [data-disabled]
+    ) {
+    cursor: not-allowed;
+  }
+
+  a {
+    text-underline-offset: 0.22em;
+    text-decoration-thickness: 1px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line-strong);
+    border: 3px solid var(--color-paper);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  .shell {
+    width: 100%;
+    max-width: 1440px;
+    margin-inline: auto;
+    padding-inline: clamp(16px, 3.2vw, 44px);
+  }
+
+  /* Headings speak in Fraunces with its soft axis up: rounded serifs, regular weight, gentle tracking. */
+  .display,
+  .title,
+  .section-title,
+  .heading {
+    font-family: var(--font-heading);
+    font-optical-sizing: auto;
+    font-variation-settings:
+      "SOFT" 100,
+      "WONK" 0;
+    font-weight: 400;
+    text-wrap: balance;
+  }
+
+  .display {
+    font-size: clamp(2.5rem, 6vw, 5.25rem);
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  .title {
+    font-size: clamp(2.125rem, 4vw, 3.5rem);
+    line-height: 1.04;
+    letter-spacing: -0.016em;
+  }
+
+  .section-title {
+    font-size: clamp(1.75rem, 2.8vw, 2.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.012em;
+  }
+
+  .heading {
+    font-size: 1.4375rem;
+    line-height: 1.18;
+    letter-spacing: -0.006em;
+  }
+
+  .lede {
+    font-size: 1.0625rem;
+    line-height: 1.6;
+    color: var(--color-stone);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 48px;
+    padding: 0 1.5rem;
+    border-radius: 999px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    text-decoration: none;
+    transition:
+      background-color 200ms var(--ease-out),
+      color 200ms var(--ease-out),
+      box-shadow 260ms var(--ease-out),
+      transform 200ms var(--ease-out);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .btn:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  .btn:disabled {
+    cursor: not-allowed;
+  }
+
+  /* A disabled outline or quiet button has to read as unavailable, not just refuse the click (pager "Previous"). */
+  .btn-secondary:disabled,
+  .btn-quiet:disabled {
+    color: var(--color-stone);
+    opacity: 0.6;
+  }
+
+  .btn-primary {
+    background: var(--color-ink);
+    color: var(--color-paper);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: var(--color-ink-hover);
+    box-shadow: var(--shadow-lift);
+  }
+
+  .btn-primary:disabled {
+    background: var(--color-plaster-deep);
+    color: var(--color-stone);
+  }
+
+  .btn-secondary {
+    background: var(--color-raised);
+    color: var(--color-ink);
+    box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 1px var(--color-ink);
+  }
+
+  .btn-quiet {
+    background: var(--color-plaster);
+    color: var(--color-ink);
+  }
+
+  .btn-quiet:hover:not(:disabled) {
+    background: var(--color-plaster-deep);
+  }
+
+  .btn-sm {
+    min-height: 38px;
+    padding: 0 1rem;
+    font-size: 0.875rem;
+  }
+
+  .icon-btn {
+    display: inline-grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 999px;
+    color: var(--color-ink);
+    transition:
+      background-color 180ms var(--ease-out),
+      transform 200ms var(--ease-out);
+    position: relative;
+    cursor: pointer;
+  }
+
+  .icon-btn:hover,
+  .icon-btn[data-state="open"] {
+    background: var(--color-plaster);
+  }
+
+  .icon-btn:active {
+    transform: scale(0.94);
+  }
+
+  .count-badge {
+    position: absolute;
+    top: 4px;
+    right: 2px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: var(--color-cobalt);
+    color: var(--color-paper);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kbd {
+    display: inline-grid;
+    place-items: center;
+    min-width: 1.35rem;
+    height: 1.35rem;
+    padding: 0 0.35rem;
+    border-radius: 6px;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--color-stone);
+    background: var(--color-plaster);
+    box-shadow: inset 0 -1px 0 var(--color-line-strong);
+  }
+
+  .link {
+    color: var(--color-ink);
+    text-decoration: underline;
+    text-decoration-color: var(--color-line-strong);
+    transition: text-decoration-color 180ms var(--ease-out);
+  }
+
+  .link:hover {
+    text-decoration-color: var(--color-ink);
+  }
+
+  .field {
+    width: 100%;
+    min-height: 50px;
+    padding: 0 1rem;
+    border-radius: var(--radius-field);
+    background: var(--color-raised);
+    box-shadow: inset 0 0 0 1px var(--color-line-strong);
+    color: var(--color-ink);
+    transition: box-shadow 180ms var(--ease-out);
+  }
+
+  textarea.field {
+    padding: 0.8rem 1rem;
+    min-height: 110px;
+    resize: vertical;
+  }
+
+  .field::placeholder {
+    color: var(--color-stone);
+  }
+
+  .field:hover {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-line-strong), var(--color-ink) 20%);
+  }
+
+  .field:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--color-cobalt);
+  }
+
+  .field[aria-invalid="true"] {
+    box-shadow: inset 0 0 0 1px var(--color-brick);
+  }
+
+  .field[aria-invalid="true"]:focus {
+    box-shadow: inset 0 0 0 2px var(--color-brick);
+  }
+
+  /* Field errors: a quiet brick line under the control, led by a drawn alert glyph. It settles in from just above,
+     so the message reads as belonging to the field rather than popping up like a browser bubble. */
+  .field-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.375rem;
+    margin-top: 0.45rem;
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--color-brick);
+    animation: field-error-in 220ms var(--ease-out) both;
+  }
+
+  .field-error svg {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .field-error {
+      animation: none;
+    }
+  }
+
+  .label {
+    display: block;
+    margin-bottom: 0.45rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--color-ink);
+  }
+
+  .hint {
+    margin-top: 0.4rem;
+    font-size: 0.8125rem;
+    color: var(--color-stone);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 38px;
+    padding: 0 0.95rem;
+    border-radius: 999px;
+    font-size: 0.875rem;
+    color: var(--color-ink);
+    background: var(--color-raised);
+    box-shadow: inset 0 0 0 1px var(--color-line);
+    transition:
+      box-shadow 180ms var(--ease-out),
+      background-color 180ms var(--ease-out),
+      transform 200ms var(--ease-out);
+    white-space: nowrap;
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  .chip:hover {
+    box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  }
+
+  .chip:active {
+    transform: scale(0.97);
+  }
+
+  .chip[aria-pressed="true"],
+  .chip[aria-current="page"] {
+    background: var(--color-ink);
+    color: var(--color-paper);
+    box-shadow: none;
+  }
+
+  /* Status reads as a small printed label: squared 6px corners, a hairline ring and toned text.
+     No fill, no leading dot. */
+  .status {
+    display: inline-flex;
+    white-space: nowrap;
+    align-items: center;
+    gap: 0.3em;
+    padding: 0.1875rem 0.5rem;
+    border-radius: 6px;
+    box-shadow: inset 0 0 0 1px var(--color-line-strong);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.3;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .status-ok {
+    color: var(--color-moss);
+  }
+
+  .status-warn {
+    color: var(--color-amber);
+  }
+
+  .status-muted {
+    color: var(--color-stone);
+  }
+
+  .status-info {
+    color: var(--color-cobalt);
+  }
+
+  .status-error {
+    color: var(--color-brick);
+  }
+
+  .alert {
+    display: flex;
+    gap: 0.6rem;
+    padding: 0.8rem 1rem;
+    border-radius: var(--radius-field);
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
+
+  .alert-error {
+    background: var(--color-brick-wash);
+    color: var(--color-brick);
+  }
+
+  .alert-ok {
+    background: var(--color-moss-wash);
+    color: var(--color-moss);
+  }
+
+  .panel {
+    border-radius: var(--radius-well);
+    background: var(--color-plaster);
+  }
+
+  .hairline {
+    border-color: var(--color-line);
+  }
+
+  /* Plates: every product photo sits in a 4:5 plaster well. Portrait shots cover it;
+     landscape shots keep their full width and their own wall and floor are stretched to fill. */
+  .well {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    border-radius: var(--radius-well);
+    background: var(--color-plaster);
+  }
+
+  .well-band {
+    position: absolute;
+    z-index: -1;
+  }
+
+  .well-band[data-edge="top"],
+  .well-band[data-edge="bottom"] {
+    left: 0;
+    right: 0;
+    height: 55%;
+  }
+
+  .well-band[data-edge="top"] {
+    top: 0;
+  }
+
+  .well-band[data-edge="bottom"] {
+    bottom: 0;
+  }
+
+  .well-band[data-edge="left"],
+  .well-band[data-edge="right"] {
+    top: 0;
+    bottom: 0;
+    width: 55%;
+  }
+
+  .well-band[data-edge="left"] {
+    left: 0;
+  }
+
+  .well-band[data-edge="right"] {
+    right: 0;
+  }
+
+  .plate {
+    transition:
+      opacity 420ms var(--ease-out),
+      transform 900ms var(--ease-out);
+  }
+
+  .plate-wide {
+    mask-image: linear-gradient(to bottom, transparent 0, black 6%, black 94%, transparent 100%);
+  }
+
+  .plate-tall {
+    mask-image: linear-gradient(to right, transparent 0, black 6%, black 94%, transparent 100%);
+  }
+
+  .zoom-on-hover:hover .plate-stage {
+    transform: scale(1.035);
+  }
+
+  .plate-stage {
+    position: absolute;
+    inset: 0;
+    transition: transform 900ms var(--ease-out);
+  }
+
+  .swatch {
+    position: relative;
+    display: inline-block;
+    border-radius: 999px;
+    overflow: hidden;
+    background: var(--color-plaster-deep);
+    box-shadow: inset 0 0 0 1px rgb(27 26 23 / 0.12);
+    transition: box-shadow 180ms var(--ease-out);
+  }
+
+  .swatch img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Home "Shop by material": the texture draws in from an ink ring on hover. Stays inside its 88px circle,
+     so the scrolling row never clips it. */
+  .material-swatch {
+    background: var(--color-paper);
+    transition: box-shadow 300ms var(--ease-out);
+  }
+
+  .material-swatch img {
+    border-radius: 999px;
+    transition: transform 400ms var(--ease-out);
+  }
+
+  a:hover > .material-swatch,
+  a:focus-visible > .material-swatch {
+    box-shadow: inset 0 0 0 1.5px var(--color-ink);
+  }
+
+  a:hover > .material-swatch img,
+  a:focus-visible > .material-swatch img {
+    transform: scale(0.86);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .material-swatch,
+    .material-swatch img {
+      transition: none;
+    }
+  }
+
+  .swatch-ring {
+    border-radius: 999px;
+    padding: 3px;
+    box-shadow: inset 0 0 0 1px transparent;
+    transition: box-shadow 200ms var(--ease-out);
+  }
+
+  .swatch-ring[aria-checked="true"],
+  .swatch-ring[aria-pressed="true"] {
+    box-shadow: inset 0 0 0 2px var(--color-cobalt);
+  }
+
+  .swatch-ring:hover:not([aria-checked="true"]):not([aria-pressed="true"]) {
+    box-shadow: inset 0 0 0 1px var(--color-line-strong);
+  }
+
+  .veil {
+    background: rgb(27 26 23 / 0.36);
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--color-plaster) 0%, color-mix(in srgb, var(--color-plaster), var(--color-paper) 55%) 50%, var(--color-plaster) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+    border-radius: 10px;
+  }
+
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    animation: spin 700ms linear infinite;
+  }
+
+  /* Home hero. On phones the copy sits under the photo; from md it overlays the pale wall, lifted by a paper wash
+     that fades out before the sofa. The accent phrase turns Fraunces' WONK axis on, light and walnut-brown. */
+  .hero-accent {
+    font-variation-settings:
+      "SOFT" 100,
+      "WONK" 1;
+    font-weight: 300;
+    color: var(--color-walnut);
+  }
+
+  @media (min-width: 768px) {
+    .hero-wash {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(100deg, rgb(250 247 242 / 0.85) 0%, rgb(250 247 242 / 0.43) 38%, rgb(250 247 242 / 0) 62%);
+    }
+
+    /* Centred on the wall, a little above the middle so it clears the sofa's back. */
+    .hero-copy {
+      position: absolute;
+      inset-block: 0;
+      left: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      width: min(56%, 760px);
+      padding: 0 0 4rem max(2.5rem, 8%);
+    }
+
+    .hero-title {
+      font-size: clamp(2.75rem, 6.2vw, 5.75rem);
+      line-height: 1.02;
+      letter-spacing: -0.025em;
+      max-width: 13ch;
+    }
+
+    .hero-lede {
+      margin-top: 1.5rem;
+      max-width: 36ch;
+      color: rgb(27 26 23 / 0.72);
+    }
+
+    .hero-copy > div:last-child {
+      margin-top: 2.5rem;
+    }
+  }
+
+  .hero-rise {
+    animation: rise 1100ms var(--ease-out) both;
+  }
+
+  .hero-settle {
+    animation: settle 2200ms var(--ease-out) both;
+  }
+
+  .bump {
+    animation: bump 420ms var(--ease-out);
+  }
+}
+
+@keyframes field-error-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(18px);
+  }
+}
+
+@keyframes settle {
+  from {
+    transform: scale(1.045);
+  }
+}
+
+@keyframes bump {
+  40% {
+    transform: scale(1.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}

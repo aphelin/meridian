@@ -1,0 +1,58 @@
+/// Read model of the analytics-projector consumer group. Everything here is derived from the Kafka log and can be
+/// truncated and rebuilt by replaying the log from the earliest offset. Days are UTC calendar days "YYYY-MM-DD".
+
+/// Sales counters per UTC day. Each counter is attributed to the day of the business fact (placedAt, paidAt, ...).
+model DailySales {
+  day             String   @id
+  ordersPlaced    Int      @default(0)
+  ordersPaid      Int      @default(0)
+  ordersCancelled Int      @default(0)
+  paymentsFailed  Int      @default(0)
+  placedCents     BigInt   @default(0)
+  grossCents      BigInt   @default(0)
+  refundsCents    BigInt   @default(0)
+  updatedAt       DateTime @default(now())
+}
+
+/// Units and revenue of paid order lines per UTC day and SKU.
+model ProductSales {
+  day          String
+  sku          String
+  slug         String
+  productName  String
+  units        Int      @default(0)
+  revenueCents BigInt   @default(0)
+  updatedAt    DateTime @default(now())
+
+  @@id([day, sku])
+  @@index([day])
+}
+
+/// Cancelled orders per UTC day and cancellation reason.
+model CancellationStats {
+  day    String
+  reason String
+  count  Int    @default(0)
+
+  @@id([day, reason])
+}
+
+/// What the projection already counted for one order, so a re-published fact (new messageId, same order) never counts twice.
+model OrderActivity {
+  orderId         String   @id
+  placedDay       String?
+  paidDay         String?
+  cancelledDay    String?
+  paidCents       BigInt   @default(0)
+  refundedCents   BigInt   @default(0)
+  paymentFailures Int      @default(0)
+  updatedAt       DateTime @default(now())
+}
+
+/// Singleton per projector: the latest event time folded into the read model.
+model ProjectionState {
+  projector       String    @id
+  lastEventAt     DateTime?
+  eventsProjected BigInt    @default(0)
+  updatedAt       DateTime  @default(now())
+}

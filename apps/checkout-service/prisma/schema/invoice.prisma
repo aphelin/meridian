@@ -1,0 +1,13 @@
+/// One invoice per order. `seq` is a serial column, so Postgres owns the invoice number sequence
+/// (`pg_get_serial_sequence('"Invoice"', 'seq')`); the number is allocated before the PDF is stored and reused on retries.
+model Invoice {
+  id          String    @id
+  orderId     String    @unique
+  number      String    @unique
+  seq         Int       @unique @default(autoincrement())
+  status      String
+  objectKey   String
+  totalCents  Int
+  createdAt   DateTime
+  issuedAt    DateTime?
+}

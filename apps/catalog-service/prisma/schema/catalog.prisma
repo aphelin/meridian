@@ -1,0 +1,119 @@
+model Category {
+  id            String    @id
+  label         String
+  blurb         String
+  coverImageUrl String
+  position      Int
+  products      Product[]
+}
+
+model Material {
+  id        String @id
+  label     String
+  swatchUrl String
+  position  Int
+}
+
+model Product {
+  id               String           @id
+  /// Insertion order; drives keyset pagination so seeded products keep the storefront order.
+  seq              Int              @unique @default(autoincrement())
+  slug             String           @unique
+  name             String
+  kind             String
+  story            String
+  categoryId       String
+  category         Category         @relation(fields: [categoryId], references: [id])
+  materials        String[]
+  priceCents       Int
+  currency         String           @default("EUR")
+  status           String
+  featured         Boolean
+  soldOut          Boolean
+  heroImageUrl     String
+  detailImageUrl   String?
+  widthCm          Float?
+  depthCm          Float?
+  heightCm         Float?
+  weightKg         Float?
+  construction     String?
+  care             String?
+  rating1          Int              @default(0)
+  rating2          Int              @default(0)
+  rating3          Int              @default(0)
+  rating4          Int              @default(0)
+  rating5          Int              @default(0)
+  firstPublishedAt DateTime?
+  createdAt        DateTime
+  updatedAt        DateTime
+  variants         ProductVariant[]
+  images           ProductImage[]
+
+  @@index([status, seq])
+  @@index([categoryId, status, seq])
+}
+
+model ProductVariant {
+  productId   String
+  variantId   String
+  sku         String  @unique
+  label       String
+  colorFamily String
+  material    String
+  swatchUrl   String
+  imageUrl    String
+  position    Int
+  product     Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([productId, variantId])
+}
+
+model ProductImage {
+  id        String   @id
+  productId String
+  objectKey String   @unique
+  url       String
+  alt       String
+  position  Int
+  createdAt DateTime
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, position])
+}
+
+model Review {
+  id         String   @id
+  productId  String
+  /// Null once the author deleted their account (anonymised).
+  userId     String?
+  authorName String
+  rating     Int
+  title      String
+  body       String
+  createdAt  DateTime
+
+  @@unique([productId, userId])
+  @@index([productId, createdAt, id])
+  @@index([userId])
+}
+
+/// A delivered order line that lets a customer review the product (fed by OrderDelivered, group catalog-purchases).
+model PurchaseRecord {
+  userId       String
+  slug         String
+  customerName String
+  orderId      String
+  deliveredAt  DateTime
+
+  @@id([userId, slug])
+}
+
+model WishlistItem {
+  userId   String
+  slug     String
+  position Int
+  addedAt  DateTime
+
+  @@id([userId, slug])
+  @@index([userId, position])
+}

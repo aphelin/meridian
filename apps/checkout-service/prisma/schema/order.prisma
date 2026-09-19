@@ -1,0 +1,109 @@
+/// Order aggregate root. Header, customer and pricing are denormalised columns so list queries read them directly.
+model Order {
+  id                 String               @id
+  number             String               @unique
+  status             String
+  userId             String?
+  customerEmail      String
+  customerName       String
+  shippingAddress    Json
+  shippingMethod     String
+  subtotalCents      Int
+  discountCents      Int
+  shippingCents      Int
+  taxCents           Int
+  taxRatePercent     Int
+  totalCents         Int
+  currency           String               @default("EUR")
+  couponCode         String?
+  refundedCents      Int                  @default(0)
+  cancellationReason String?
+  paymentId          String?
+  transactionId      String?
+  paidAt             DateTime?
+  paymentDeadline    DateTime?
+  carrier            String?
+  trackingNumber     String?
+  trackingUrl        String?
+  shippedAt          DateTime?
+  deliveredAt        DateTime?
+  cancelledAt        DateTime?
+  invoiceNumber      String?              @unique
+  invoiceIssuedAt    DateTime?
+  correlationId      String
+  /// Optimistic concurrency: every save bumps it; a stale save is rejected.
+  version            Int                  @default(1)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  lines              OrderLine[]
+  timeline           OrderTimelineEntry[]
+  refunds            OrderRefund[]
+  returns            OrderReturn[]
+
+  @@index([userId, createdAt])
+  @@index([status, paymentDeadline])
+  @@index([status, createdAt, id])
+  @@index([createdAt, id])
+  @@index([customerEmail])
+}
+
+model OrderLine {
+  orderId        String
+  position       Int
+  sku            String
+  slug           String
+  productName    String
+  variantLabel   String
+  qty            Int
+  unitPriceCents Int
+  lineTotalCents Int
+  order          Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@id([orderId, sku])
+}
+
+/// Append-only history of status changes, refunds and returns.
+model OrderTimelineEntry {
+  id      String   @id
+  orderId String
+  status  String
+  note    String?
+  at      DateTime
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, at])
+}
+
+model OrderRefund {
+  id            String    @id
+  orderId       String
+  amountCents   Int
+  reason        String
+  status        String
+  returnId      String?
+  failureReason String?
+  createdAt     DateTime
+  settledAt     DateTime?
+  order         Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model OrderReturn {
+  id          String    @id
+  orderId     String
+  status      String
+  /// SkuQty[]
+  lines       Json
+  reason      String
+  refundCents Int?
+  restock     Boolean?
+  note        String?
+  createdAt   DateTime
+  decidedAt   DateTime?
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status, createdAt, id])
+  @@index([createdAt, id])
+}

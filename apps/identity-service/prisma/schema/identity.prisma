@@ -1,0 +1,66 @@
+/// User aggregate root. Email is stored normalised (trimmed, lower case) so uniqueness is case-insensitive.
+model User {
+  id              String         @id
+  email           String         @unique
+  name            String
+  role            String         @default("customer")
+  passwordHash    String
+  emailVerifiedAt DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  addresses       Address[]
+  refreshTokens   RefreshToken[]
+  oneTimeTokens   OneTimeToken[]
+
+  @@index([role, createdAt, id])
+}
+
+/// Saved address, part of the User aggregate (max 10 per user, at most one default).
+model Address {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label      String?
+  fullName   String
+  line1      String
+  line2      String?
+  city       String
+  postalCode String
+  country    String
+  phone      String?
+  isDefault  Boolean  @default(false)
+  position   Int
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, position])
+}
+
+/// Rotating refresh token. Tokens of one login share a familyId; presenting a revoked token revokes the family.
+model RefreshToken {
+  id        String    @id
+  familyId  String
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  @@index([familyId])
+  @@index([userId, revokedAt])
+}
+
+/// Single-use email verification and password reset tokens, stored as SHA-256 hashes.
+model OneTimeToken {
+  id        String    @id
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   String
+  tokenHash String    @unique
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  @@index([userId, purpose, usedAt])
+}

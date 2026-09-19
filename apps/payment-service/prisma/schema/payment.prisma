@@ -1,0 +1,43 @@
+/// The Payment aggregate: one per order (orderId is the intent idempotency key).
+model Payment {
+  id                    String    @id
+  orderId               String    @unique
+  orderNumber           String
+  /// Meridian transaction id handed to checkout and the storefront.
+  transactionId         String    @unique
+  provider              String
+  status                String
+  amountCents           Int
+  currency              String
+  /// Local sandbox only: SHA-256 of the client secret (the secret itself is never stored).
+  clientSecretHash      String?
+  /// Paddle sandbox only: the Paddle transaction id (txn_...).
+  providerTransactionId String?   @unique
+  failureReason         String?
+  voidReason            String?
+  succeededAt           DateTime?
+  voidedAt              DateTime?
+  createdAt             DateTime
+  updatedAt             DateTime
+  refunds               Refund[]
+}
+
+/// A refund entity inside the Payment aggregate; refundId is unique per payment (checkout's idempotency key).
+model Refund {
+  paymentId          String
+  refundId           String
+  kind               String
+  amountCents        Int
+  reason             String
+  status             String
+  /// Provider reference (Paddle adjustment id); null for the local sandbox.
+  providerRefundId   String?   @unique
+  failureReason      String?
+  /// While set in the future, one worker is talking to the provider about this refund.
+  dispatchLeaseUntil DateTime?
+  createdAt          DateTime
+  settledAt          DateTime?
+  payment            Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@id([paymentId, refundId])
+}

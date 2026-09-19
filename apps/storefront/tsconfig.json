@@ -1,0 +1,65 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    ".next-1-3-1/types/**/*.ts",
+    ".next-1-3-1/dev/types/**/*.ts",
+    ".next-finish-review/types/**/*.ts",
+    ".next-finish-review/dev/types/**/*.ts",
+    ".next-build-check/types/**/*.ts",
+    ".next-build-check/dev/types/**/*.ts",
+    ".next-1-3-2/types/**/*.ts",
+    ".next-1-3-2/dev/types/**/*.ts",
+    ".next-1-3-3/types/**/*.ts",
+    ".next-1-3-3/dev/types/**/*.ts",
+    ".next-1-3-4/types/**/*.ts",
+    ".next-1-3-4/dev/types/**/*.ts",
+    ".next-1-3-5/types/**/*.ts",
+    ".next-1-3-5/dev/types/**/*.ts",
+    ".next-1-3-6/types/**/*.ts",
+    ".next-1-3-6/dev/types/**/*.ts",
+    ".next-node-1-3/types/**/*.ts",
+    ".next-node-1-3/dev/types/**/*.ts",
+    ".next-1-3-7-manual/types/**/*.ts",
+    ".next-1-3-7-manual/dev/types/**/*.ts",
+    ".next-otel-check/types/**/*.ts",
+    ".next-otel-check/dev/types/**/*.ts",
+    ".next-e2e-3140/types/**/*.ts",
+    ".next-e2e-3140/dev/types/**/*.ts",
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

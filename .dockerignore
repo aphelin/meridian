@@ -1,0 +1,32 @@
+# Build context for infra/docker/Dockerfile.service and Dockerfile.storefront.
+# Keep it small: dependencies are installed and code is compiled inside the image.
+**/node_modules
+**/dist
+**/.next
+**/.next-*
+**/.turbo
+**/*.tsbuildinfo
+**/test-results*
+**/playwright-report
+**/coverage
+**/*.log
+# Generated Prisma clients are host-specific (engine binaries); the image regenerates them.
+apps/*/src/generated
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Tooling state, docs and tests the images never need
+.git
+.github
+.unlazy
+.impeccable
+.claude
+docs
+tests
+infra/k8s
+**/e2e
+**/*.md
+!apps/storefront/AGENTS.md

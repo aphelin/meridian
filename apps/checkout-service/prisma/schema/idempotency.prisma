@@ -1,0 +1,10 @@
+/// Idempotency-Key store for POST /orders (kit IDEMPOTENCY_STORE). `key` is the kit's scoped hash.
+model IdempotencyKey {
+  key         String    @id
+  fingerprint String
+  response    Json?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([createdAt])
+}

@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../../..",
+    "outDir": "./dist",
+    "declaration": false
+  },
+  "include": [
+    "./**/*.ts",
+    "../../../src/core/**/*.ts",
+    "../../../src/messaging/**/*.ts",
+    "../../../src/auth.ts",
+    "../../../src/auth/**/*.ts"
+  ],
+  "exclude": ["./dist", "./generated", "../../../src/**/*.test.ts", "../../../src/**/*.spec.ts", "./**/*.test.ts"]
+}

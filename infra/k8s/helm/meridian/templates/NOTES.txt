@@ -1,0 +1,14 @@
+Meridian {{ .Chart.AppVersion }} installed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+Workloads:
+{{- range .Values.services }}
+  - {{ .name }} on port {{ .port }}
+{{- end }}
+
+Watch the rollout:   kubectl -n {{ .Release.Namespace }} get pods -w
+{{- if .Values.ingress.enabled }}
+Storefront:          http://{{ .Values.ingress.host }}/
+{{- end }}
+{{- if not .Values.existingSecret }}
+Secrets live in {{ include "meridian.secretName" . }}; JWT_SECRET and ORDER_LINK_SECRET were generated if left empty.
+{{- end }}

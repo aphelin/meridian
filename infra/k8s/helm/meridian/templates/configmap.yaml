@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "meridian.configName" . }}
+  labels:
+    {{- include "meridian.labels" (dict "root" $ "name" "config") | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.config }}
+  {{ $key }}: {{ toString $value | quote }}
+  {{- end }}
+  {{- range .Values.services }}
+  {{- if .urlEnv }}
+  {{ .urlEnv }}: {{ printf "http://%s:%v" .name .port | quote }}
+  {{- end }}
+  {{- end }}
