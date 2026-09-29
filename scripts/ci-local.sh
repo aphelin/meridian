@@ -91,12 +91,6 @@ export RABBIT_RETRY_DELAYS_MS CAPTCHA_TIMEOUT_MS
 node scripts/sync-env.mjs
 load_env
 
-stage "typecheck"
-npm run typecheck
-
-stage "unit tests (test:unit)"
-npm run test:unit
-
 stage "infrastructure (compose core + init jobs)"
 if $recreate; then infra_up --recreate; else infra_up; fi
 infra_wait "${INFRA_WAIT_SECONDS:-300}"
@@ -109,6 +103,14 @@ stage "build packages and services"
 npm run build:packages
 npm run build:services
 bash scripts/copy-prisma.sh
+
+# workspace packages resolve their types from dist/ and the services need their generated
+# prisma clients, so typecheck and unit tests run after the build step
+stage "typecheck"
+npm run typecheck
+
+stage "unit tests (test:unit)"
+npm run test:unit
 
 stage "start services"
 bash scripts/dev-api.sh --skip-build
