@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildEnvelope } from "./envelope";
 import { RabbitMessaging, withHeartbeat, type AmqpConnect } from "./rabbit";
 import { HandlerRegistry } from "./registry";
@@ -52,9 +52,16 @@ const command = buildEnvelope(
 );
 
 describe("rabbit publisher", () => {
+  // the pipeline exports RABBIT_URL from .env; these tests assert the default URL
+  const savedRabbitUrl = process.env.RABBIT_URL;
+  beforeEach(() => {
+    delete process.env.RABBIT_URL;
+  });
   afterEach(() => {
     delete process.env.MESSAGING_NAMESPACE;
     delete process.env.RABBIT_RETRY_DELAYS_MS;
+    if (savedRabbitUrl === undefined) delete process.env.RABBIT_URL;
+    else process.env.RABBIT_URL = savedRabbitUrl;
   });
 
   it("publisher declares the command queue topology before the first publish, once per connection", async () => {
