@@ -31,8 +31,8 @@ test.describe("product page", () => {
   });
 
   test("catalog sold-out piece shows the Sold out pill on its shop card, a disabled quantity stepper and a struck swatch", async ({ page }) => {
-    // sideboard-kiln is seeded with the catalog soldOut flag
-    await page.goto("/shop/storage?min=2900&max=2900");
+    // sideboard-kiln is seeded at EUR 990 with the catalog soldOut flag
+    await page.goto("/shop/storage?min=990&max=990");
     const card = page.getByRole("article", { name: "Kiln" });
     await expect(card).toBeVisible({ timeout: 20_000 });
     await expect(card.getByText("Sold out")).toBeVisible();

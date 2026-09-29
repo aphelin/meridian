@@ -21,6 +21,9 @@ async function reachPaymentStep(page: import("@playwright/test").Page, tag: stri
 }
 
 test.describe("Stripe Payment Element", () => {
+  // needs real Stripe test keys and `stripe listen` forwarding webhooks; without them payment-service uses the local sandbox
+  test.skip(!process.env.STRIPE_SECRET_KEY || !process.env.STRIPE_WEBHOOK_SECRET, "Stripe test keys are not configured");
+
   test("a guest pays with test card 4242 4242 4242 4242 and the order page shows the order paid", async ({ page }) => {
     const { variant, email } = await reachPaymentStep(page, "stripe-pay");
 
