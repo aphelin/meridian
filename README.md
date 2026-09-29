@@ -66,7 +66,7 @@ Every message leaves a service through a **transactional outbox**, in the same d
 | Cache, rate limits, chaos rules | Redis 7 (ioredis) |
 | Resilience | opossum circuit breakers, per-call timeouts, ordered graceful shutdown |
 | Storefront | Next.js 16 App Router, React 19, tRPC 11 BFF, Tailwind CSS 4, shadcn/ui on Radix |
-| Object storage | MinIO (S3 API) for product images and invoice PDFs |
+| Object storage | SeaweedFS (S3 API) for product images and invoice PDFs |
 | Observability | JSON logs with correlation and trace ids, Prometheus-format `/metrics`, OpenTelemetry traces in Jaeger |
 | Payments / email / captcha | Stripe test mode (PaymentIntents + Payment Element, `stripe` 22 SDK, webhooks through the Stripe CLI locally), local sandbox fallback, Paddle sandbox adapter kept / Mailhog / Cloudflare Turnstile test keys |
 | Tests | Vitest (unit and system), Playwright (e2e) |
@@ -77,9 +77,9 @@ Every message leaves a service through a **transactional outbox**, in the same d
 - Node.js 24 or newer and npm 11 (`package.json` pins `npm@11.12.1`).
 - Docker with Compose v2.
 - `curl`, `bash` and `setsid` (util-linux). The dev scripts use them to start services detached.
-- A machine with enough memory for Kafka, RabbitMQ, Postgres, Jaeger, MinIO and nine Node processes at once. Avoid running several TypeScript builds in parallel on a 16 GB laptop.
+- A machine with enough memory for Kafka, RabbitMQ, Postgres, Jaeger, SeaweedFS and nine Node processes at once. Avoid running several TypeScript builds in parallel on a 16 GB laptop.
 - The Stripe CLI for webhooks in development: `npm i -g @stripe/cli` (no sudo needed), and a Stripe account in test mode (a free sandbox is enough).
-- Free ports: 3001, 3003–3008, 3012, 3100 (plus 3200, 13001, 13003–13008 and 13012 for the Docker apps profile), 5434, 6380, 5672, 15672, 9092, 9000, 9001, 1025, 8025, 16686, 4317, 4318, plus 8080 if you want Kafka UI.
+- Free ports: 3001, 3003–3008, 3012, 3100 (plus 3200, 13001, 13003–13008 and 13012 for the Docker apps profile), 5434, 6380, 5672, 15672, 9092, 9000, 1025, 8025, 16686, 4317, 4318, plus 8080 if you want Kafka UI.
 
 ## Quick start
 
@@ -110,7 +110,7 @@ Pay with test card `4242 4242 4242 4242`, any future expiry and any CVC. `4000 0
 
 Notes:
 
-- `npm run infra:up` starts only the core Compose profile (Postgres, Redis, RabbitMQ, Kafka, MinIO, Mailhog, Jaeger and the one-shot init jobs). `npm run bootstrap` already does this. Run it on its own when the containers are stopped and the schemas already exist.
+- `npm run infra:up` starts only the core Compose profile (Postgres, Redis, RabbitMQ, Kafka, SeaweedFS, Mailhog, Jaeger and the one-shot init jobs). `npm run bootstrap` already does this. Run it on its own when the containers are stopped and the schemas already exist.
 - `npm run infra:tools` adds Kafka UI on http://localhost:8080 (Compose profile `tools`).
 - `npm run dev:api` writes logs to `/tmp/meridian-logs/<service>.log` and pid files to `/tmp/meridian-logs/pids/`. You can start a subset with `bash scripts/dev-api.sh --skip-build checkout-service payment-service`.
 - `npm run stop:api` stops every service gracefully with SIGTERM and reports any process that had to be killed.
@@ -138,7 +138,7 @@ Open **http://localhost:3200**. Services publish `/health/*` and `/metrics` on 1
 
 - **Images.** `infra/docker/Dockerfile.service` builds any NestJS service (`--build-arg SERVICE=<name> --build-arg PORT=<port>`): `npm ci` with a cache mount, the shared packages once, `prisma generate` and `tsc` for the service, then a `node:24-bookworm-slim` runtime with production dependencies only, user `node` (uid 1000), `NODE_ENV=production`, `EXPOSE` of the contract port and a `HEALTHCHECK` on `/health/live`. `infra/docker/Dockerfile.storefront` builds the Next.js standalone server; `NEXT_PUBLIC_*` values are build args because Next inlines them. Node runs as the main process with exec-form `CMD`, so SIGTERM reaches the kit's graceful shutdown (Compose adds `init: true` and a 40 s stop grace period).
 - **Schemas.** The one-shot `migrate` service (image `meridian/migrate:local`, target `migrate`) runs `prisma db push --skip-generate` for all eight schemas and then `init-schemas.sql`, exactly like `npm run bootstrap`. It never passes `--force-reset` or `--accept-data-loss`, so a destructive schema change fails the job instead of dropping data. The apps start only after it succeeds.
-- **Isolation from the dev stack.** The containers share Postgres, Redis, RabbitMQ, Kafka and MinIO with `npm run dev:api`, but use their own database `meridian_docker` (`MERIDIAN_APPS_DB`), messaging namespace `docker` (topics, queues and consumer groups) and Redis prefix `docker:`. The two stacks never consume each other's messages or outbox rows, and the dev schemas are never touched.
+- **Isolation from the dev stack.** The containers share Postgres, Redis, RabbitMQ, Kafka and SeaweedFS with `npm run dev:api`, but use their own database `meridian_docker` (`MERIDIAN_APPS_DB`), messaging namespace `docker` (topics, queues and consumer groups) and Redis prefix `docker:`. The two stacks never consume each other's messages or outbox rows, and the dev schemas are never touched.
 - **Configuration.** `infra/docker/apps.env` holds the in-network settings (hostnames such as `postgres`, `kafka:29092`, `minio:9000`). Put overrides in `infra/docker/apps.env.local` (git-ignored). `NODE_ENV` defaults to `production`, where the dev-only `/seed` and chaos endpoints return 404. Start with `MERIDIAN_APPS_NODE_ENV=development` if you want to seed. The storefront port can be changed with `MERIDIAN_STOREFRONT_PORT`.
 - **Kubernetes.** `npm run k8s:kind -- --build` builds the images, loads them into the kind cluster with `kind load docker-image` and installs the Helm chart, which expects the same `meridian/<service>:local` names and ports. The chart does not run the migrate job, so run `meridian/migrate:local` once against the cluster database with the eight `<SVC>_DATABASE_URL` variables.
 - **Memory.** A parallel build of all images peaks at several GB (eight `tsc` compiles, a Next.js build and the installs). The builds are capped with `BUILD_NODE_OPTIONS` build args (`--max-old-space-size=1024` for services, `2048` for the storefront).
@@ -154,7 +154,7 @@ Open **http://localhost:3200**. Services publish `/health/*` and `/metrics` on 1
 | RabbitMQ management | http://localhost:15672 | Log in with the user and password in `RABBIT_URL` |
 | Kafka UI | http://localhost:8080 | Only after `npm run infra:tools` |
 | Mailhog | http://localhost:8025 | Every email the platform sends |
-| MinIO console | http://localhost:9001 | Buckets from `S3_BUCKET_MEDIA` and `S3_BUCKET_INVOICES`; root user is in `infra/docker/compose.yml` |
+| S3 API (SeaweedFS) | http://localhost:9000 | Buckets `meridian-media` (public read) and `meridian-invoices` (private), created on startup; credentials in `infra/docker/init/seaweedfs-s3.json` |
 | Service health | http://localhost:3004/health | Any service port: `/health/live`, `/health/ready`, `/metrics` |
 
 ## Tests

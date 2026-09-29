@@ -91,6 +91,6 @@ Bootstrap complete. Next steps:
   npm run seed           seed admin user, catalog, coupons (stock follows via Kafka)
   npm run dev:store      storefront on http://localhost:3100
   npm run stop:api       graceful shutdown of the services
-UIs: RabbitMQ http://localhost:15672  Mailhog http://localhost:8025  MinIO http://localhost:9001
+UIs: RabbitMQ http://localhost:15672  Mailhog http://localhost:8025  S3 (SeaweedFS) http://localhost:9000
      Jaeger http://localhost:16686   Kafka UI (optional): docker compose -f infra/docker/compose.yml --profile tools up -d kafka-ui
 NEXT

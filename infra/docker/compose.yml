@@ -52,8 +52,8 @@ x-app: &app
       condition: service_healthy
     kafka:
       condition: service_healthy
-    minio-init:
-      condition: service_completed_successfully
+    s3:
+      condition: service_healthy
   healthcheck:
     test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:'+process.env.PORT+'/health/ready').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
     interval: 10s
@@ -117,22 +117,24 @@ services:
     profiles:
       - core
 
-  minio:
-    image: quay.io/minio/minio:latest
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: meridian
-      MINIO_ROOT_PASSWORD: meridianminio
+  # S3-compatible object storage (SeaweedFS). MinIO no longer publishes community images.
+  # Buckets are created on startup; s3.json makes the media bucket anonymously readable.
+  s3:
+    image: chrislusf/seaweedfs:4.47
+    command: >-
+      mini -dir=/data -s3.port=9000 -s3.config=/etc/seaweedfs/s3.json
+      -bucket=meridian-media,meridian-invoices
+      -admin.ui=false -webdav=false -s3.port.iceberg=0 -s3.port.lance=0
     ports:
       - "9000:9000"
-      - "9001:9001"
     volumes:
-      - minio_data:/data
+      - s3_data:/data
+      - ./init/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
       start_period: 10s
     profiles:
       - core
@@ -215,23 +217,6 @@ services:
       KAFKA_HEAP_OPTS: "-Xmx128m -Xms32m"
     volumes:
       - ./init/kafka-topics.sh:/init/kafka-topics.sh:ro
-
-  minio-init:
-    <<: *init-job
-    image: quay.io/minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_started
-    entrypoint: ["sh", "/init/minio-buckets.sh"]
-    environment:
-      <<: *init-env
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ROOT_USER: meridian
-      MINIO_ROOT_PASSWORD: meridianminio
-      S3_BUCKET_MEDIA: meridian-media
-      S3_BUCKET_INVOICES: meridian-invoices
-    volumes:
-      - ./init/minio-buckets.sh:/init/minio-buckets.sh:ro
 
   postgres-init:
     <<: *init-job
@@ -387,5 +372,5 @@ services:
 
 volumes:
   postgres_data:
-  minio_data:
+  s3_data:
   kafka_data:

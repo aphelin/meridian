@@ -6,8 +6,8 @@ COMPOSE_FILE="$ROOT/infra/docker/compose.yml"
 COMPOSE=(docker compose -f "$COMPOSE_FILE" --profile core)
 LOG_DIR="${MERIDIAN_LOG_DIR:-/tmp/meridian-logs}"
 PID_DIR="$LOG_DIR/pids"
-INFRA_SERVICES=(postgres redis rabbitmq kafka minio mailhog jaeger)
-INIT_JOBS=(postgres-init minio-init kafka-init)
+INFRA_SERVICES=(postgres redis rabbitmq kafka s3 mailhog jaeger)
+INIT_JOBS=(postgres-init kafka-init)
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 warn() { printf '[%s] warning: %s\n' "$(date +%H:%M:%S)" "$*" >&2; }

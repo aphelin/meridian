@@ -352,7 +352,7 @@ sequenceDiagram
   end
   CO-)K: OrderPaid
   K-)N: notification-dispatcher → order-confirmation email
-  R-)CO: generate-invoice → PDF to MinIO → InvoiceIssued → invoice email
+  R-)CO: generate-invoice → PDF to SeaweedFS → InvoiceIssued → invoice email
 ```
 
 The shopper's order page polls every 2 seconds, for up to 60 seconds, until the status is `paid`. **Why a command and not "checkout listens to PaymentSucceeded"?** Confirmation is work that checkout must do exactly once, with retries and a DLQ if it keeps failing. It is not optional downstream reaction. The event still exists for analytics and auditing.
@@ -485,7 +485,7 @@ Each section lists aggregates and their invariants, the main commands and querie
 - **Consumes:** group `catalog-purchases`: `OrderDelivered` → RecordPurchases (guest orders skipped); `UserDeleted` → ForgetUser (anonymise reviews, delete the wishlist and purchase records).
 - **Infrastructure**
   - **Snapshot cache:** the catalog snapshot is cached in Redis cache-aside for 60 s, with a generation counter bumped on every write. If Redis fails, reads fall back to the database.
-  - **Image uploads** go to MinIO: presigned PUT for 5 minutes, then attach verifies the object with a HEAD request.
+  - **Image uploads** go to SeaweedFS: presigned PUT for 5 minutes, then attach verifies the object with a HEAD request.
   - **S3 calls:** timeout `S3_TIMEOUT_MS` (default 5000), breaker `s3`, chaos target `s3.put`.
 
 ### inventory-service
@@ -673,7 +673,7 @@ Key behaviour:
 | Service → service (REST) | Per client, 2–6 s in checkout | `packages/nest-kit/src/http/resilient-http-client.ts` |
 | Turnstile siteverify | `CAPTCHA_TIMEOUT_MS`, default 3000 | `packages/nest-kit/src/security/captcha.ts` |
 | SMTP | connect 5 s, greeting 5 s, socket 10 s | notification `SmtpMailer` |
-| S3 / MinIO | `S3_TIMEOUT_MS`, default 5000 | catalog media storage, checkout invoice storage |
+| S3 / SeaweedFS | `S3_TIMEOUT_MS`, default 5000 | catalog media storage, checkout invoice storage |
 | Stripe API | `STRIPE_TIMEOUT_MS`, default 10000, one SDK retry | payment `StripeTestProvider` |
 | Paddle API | 5000 ms | payment `PaddleSandboxProvider` |
 | Redis | command 1000 ms, connect 2000 ms | `packages/nest-kit/src/runtime/redis.service.ts` |
